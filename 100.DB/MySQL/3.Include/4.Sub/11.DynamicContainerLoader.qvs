@@ -1,0 +1,138 @@
+  /* __________________________________________________________________________
+ | Deployment Framework BaseVariable 11.DynamicContainerGlobalVariables.qvs  |
+ |  All path are based on vG.BasePath                        				 |
+ |  This script is used to dynamic connect to container folders     		 |
+ |____________________________________________________________________________*/
+
+// This script should only be accessed from QlikView via the LoadContainerGlobalVariables function
+// SUB DynamicContainerGlobalVariables (‘Container Path Name’,['Optional Single Folder'], [’Optional use alternative Container Map’]);
+// Example: call DynamicContainerGlobalVariables('1.AcmeStore');
+// Example: call DCGV('1.AcmeStore');
+SUB DynamicContainerGlobalVariables(vL.QDF.ContanerName,vL.QDF.SingleFolder,vL.QDF.OverridePrefix,vL.QDF.ContainerMapPath);
+
+// Writing information in log
+trace '### DF DynamicContainerGlobalVariables Started';
+SET vL.QDF.ContainerFolderName = ; // Reset variable 
+
+if '$(vL.QDF.ContainerMapPath)' = '' then // If null use default ContainerMap else Shared ContainerMap is used
+	let vL.QDF.ContainerMapPath = '$(vG.BaseVariablePath)\ContainerMap.csv';
+else
+	let vL.QDF.ContainerMapPath = '$(vG.SharedBaseVariablePath)\ContainerMap.csv';	
+end if
+
+
+// Load container mapping table and variables by using LoadContainerMap function
+
+if '$(vL.QDF.ContanerName)' = '' then // If no container specified populating my home container
+
+SET vL.QDF.BasePath = '$(vG.BasePath)';
+SET vL.ContainerPathName=;
+set vL.QDF.Comment='Loading vG.BasePath Global Path Variables'; 
+SET vL.QDF.ContainerFolderName='BasePath';
+
+else
+	call LoadContainerMap('$(vL.QDF.ContainerMapPath)','$(vL.QDF.ContanerName)'); // Using LoadContainerMap with special switches the Container links will be populated automatically
+	if trim('$(vL.ContainerPathName)')= '$(vL.QDF.ContanerName)' then // If container found by LoadContainerMap sub function
+		SET vL.QDF.BasePath  = '$(vL.RootPath)$(vL.QDF.ContainerFolderName)\';
+		
+	elseif not IsNull(filesize('$(vL.QDF.ContanerName)')) = -1 then // If container not found it could be a folder path instead of a Map reference
+		SET vL.QDF.BasePath  = '$(vL.QDF.ContanerName)\';
+		SET vL.QDF.ContainerFolderName = 'No folder found, Custom path used';
+	endif;
+endif;
+
+if not '$(vL.QDF.ContainerFolderName)'='' then // Execute only if container found
+
+if not '$(vL.QDF.OverridePrefix)'='' then // If OverridePrefix swish is used set the prefix
+	LET vL.ContainerPathName='$(vL.QDF.OverridePrefix)';
+	trace '### DF Info Override Prefix switsh $(vL.QDF.OverridePrefix) used';
+endif;
+
+// Writing information in log
+trace '### DF $(vL.QDF.ContainerFolderName) Comments: $(vL.QDF.Comment)';
+
+Call DoDir ('$(vL.QDF.BasePath)','vL.DoDir_Tmp_Table','true','','true'); // Creates DoDir Table 'vL.DoDir_Tmp_Table' on folders only from vL.QDF.BasePath path
+
+if NoOfFields('vL.DoDir_Tmp_Table') > 0 then // Validate if DoDir table exists
+
+// loop through DoDir Table
+let vL.QDF.xxxxx = NoOfRows('vL.DoDir_Tmp_Table');
+
+for vL.QDF.ttttt = 0 to vL.QDF.xxxxx-1
+
+		LET vL.QDF.VariablePrefix = PurgeChar(subfield(peek('vL.DoDir_Tmp_Table.DoDirFileName',$(vL.QDF.ttttt),'vL.DoDir_Tmp_Table'),'.',-1),'=;,- '&chr(39));
+		LET vL.QDF.PhysicalFolderName = peek('vL.DoDir_Tmp_Table.FullyQualifiedName',$(vL.QDF.ttttt),'vL.DoDir_Tmp_Table');	
+		LET vL.QDF.DuplicatedFolders=peek('vL.DoDir_Tmp_Table.DoDirFileNameCount',$(vL.QDF.ttttt),'vL.DoDir_Tmp_Table');	
+		LET vL.QDF.SubStringSplitt=';'&'$(vL.QDF.SingleFolder)'&';'; // Creating a variable used for easy substring splitt
+		for vL.QDF.SubString=1 to substringcount ('$(vL.QDF.SubStringSplitt)',';') -1 // loop as many times there are folders defined (separated by ;)
+			if TextBetween('$(vL.QDF.SubStringSplitt)' , ';', ';' , vL.QDF.SubString ) = '$(vL.QDF.VariablePrefix)' or '$(vL.QDF.SingleFolder)'='' then
+				if vL.QDF.DuplicatedFolders > 1 then //If duplicated folders found send error message
+					trace '### DF Warning found duplicated folders of $(vL.QDF.VariablePrefix) in location $(vL.QDF.PhysicalFolderName)\'
+					trace '### DF Warning please fix the duplication error else there might be issues';
+					sleep 5000;
+					SET 5000=; // Remove strange variable created by sleep
+				endif
+				LET vG.$(vL.ContainerPathName)$(vL.QDF.VariablePrefix)Path='$(vL.QDF.PhysicalFolderName)\';
+			endif	
+		next vL.QDF.SubString;
+next vL.QDF.ttttt
+
+
+
+// Trim pace and last \
+if right('$(vL.QDF.BasePath)',1)='\' then
+	let vL.QDF.BasePath=left(trim('$(vL.QDF.BasePath)'), len('$(vL.QDF.BasePath)')-1);
+endif
+
+ if '$(vL.QDF.SingleFolder)' ='' then // If SingleFolder not used add global vG.xxBasePath variable among the others
+ 	LET vG.$(vL.ContainerPathName)BasePath='$(vL.QDF.BasePath)';
+endif
+
+drop table [vL.DoDir_Tmp_Table]; // Drop DoDir tmp table
+trace '### DF DynamicContainerGlobalVariables Finished';
+
+else
+	trace '### DF Warning unable to identify DoDir table, probably no valid folder exists';
+endif
+
+else
+	trace '### DF Could not find $(vL.ContainerPathName) container in Container Map';
+endif;
+
+
+
+// Clean Variables
+SET vL.QDF.ttttt = ;
+SET vL.QDF.xxxxx = ;
+SET vL.QDF.ContanerName=;
+SET vL.QDF.ContainerMapPath=;
+SET vL.QDF.SingleFolder=;
+SET vL.QDF.BasePath=;
+SET vL.QDF.ContainerFolderName=;
+SET vL.QDF.PhysicalFolderName=;
+SET vL.QDF.VariablePrefix=;
+SET vL.ContainerPathName=;
+SET vL.RootPath=;
+SET vL.QDF.Comment=;
+SET vL.QDF.SingleFolder=;
+SET vL.QDF.SubStringSplitt=;
+SET vL.QDF.SubString=;
+SET vL.QDF.DuplicatedFolders=;
+SET vL.QDF.OverridePrefix=;
+endsub
+
+// Sub Function short name for DynamicContainerGlobalVariables = DCGV
+SUB DCGV(vL.QDF.ContanerName_tmp,vL.QDF.SingleFolder_tmp,vL.QDF.ContainerMapPath_tmp); // Alias for LoadContainerGlobalVariables
+	call DynamicContainerGlobalVariables('$(vL.QDF.ContanerName_tmp)','$(vL.QDF.SingleFolder_tmp)','$(vL.QDF.OverridePrefix_tmp)','$(vL.QDF.ContainerMapPath_tmp)');
+	
+	// Clean Variables
+	SET vL.QDF.ContanerName_tmp=;
+	SET vL.QDF.SingleFolder_tmp=;
+	SET vL.QDF.ContainerPathName_tmp=;
+	SET vL.QDF.OverridePrefix_tmp=;
+end sub
+
+
+// *************************************
+// Functions written by Magnus Berg Qlik
+// *************************************

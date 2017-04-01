@@ -1,0 +1,6 @@
+Prefix,ContainerName,Comments,AltPath
+Admin,0.Administration,Mandatory administration container,
+Shared,99.Shared_Folders,Common content storage,
+Website,1.Website,Website Analytics,
+MySQL,100.DB\MySQL,Database from MySQL,
+GoogleAnalytics,100.DB\GoogleAnalytics,Database from Google Analytics,
